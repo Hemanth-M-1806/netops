@@ -35,12 +35,25 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-netops}
       FRONTEND_ORIGIN: http://localhost:3000
     env_file:
-      - .env
+      - path: .env
+        required: false
     ports:
       - "8000:8000"
     depends_on:
       mysql:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   collector:
     build:
@@ -50,11 +63,26 @@ services:
     restart: unless-stopped
     environment:
       COLLECTOR_FORWARDER: backend
-      COLLECTOR_BACKEND_URL: http://backend:8000/api/v1/telemetry/ingest
+      # NOTE: the collector setting is COLLECTOR_FORWARD_URL (COLLECTOR_ prefix +
+      # forward_url field). Any other name is silently ignored by pydantic-settings.
+      COLLECTOR_FORWARD_URL: http://backend:8000/api/v1/telemetry/ingest
     ports:
       - "8100:8100"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   frontend:
     build:
@@ -78,9 +106,27 @@ services:
       SIMULATOR_COLLECTOR_URL: http://collector:8100/ingest
       SIMULATOR_INTERVAL_SECONDS: 5
       SIMULATOR_DEFAULT_SCENARIO: mixed
+      SIMULATOR_HOST: 0.0.0.0
+      SIMULATOR_PORT: 8200
+    ports:
+      - "8200:8200"
     depends_on:
-      - collector
-      - backend
+      backend:
+        condition: service_healthy
+      collector:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8200/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   mysql_data:

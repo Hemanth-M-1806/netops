@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app import status as status_server
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.domain.models import InterfaceState
@@ -63,6 +64,9 @@ async def run(config: RunConfig, settings: Settings | None = None) -> dict:
     dry_run = config.dry_run or settings.dry_run
     scenario = _resolve_scenario(config, settings)
 
+    # Start the browsable status endpoint early so it also covers discovery.
+    status_server.start(settings, scenario.name)
+
     backend_client = None
     collector_client = None
     if dry_run:
@@ -91,6 +95,7 @@ async def run(config: RunConfig, settings: Settings | None = None) -> dict:
     try:
         interfaces = await resolver.resolve(default_topology())
     except Exception:
+        status_server.stop()
         await _close_clients()
         raise
 
@@ -106,12 +111,14 @@ async def run(config: RunConfig, settings: Settings | None = None) -> dict:
         generator_for=scenario.generator_for,
         reset_generators=scenario.reset,
     )
+    status_server.set_simulator(simulator)
 
     try:
         summary = await simulator.run(
             ticks=config.ticks, duration_seconds=config.duration_seconds
         )
     finally:
+        status_server.stop()
         await sink.close()
         await _close_clients()
 

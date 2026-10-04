@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # --- observability ------------------------------------------------------
     log_level: str = "INFO"
 
+    # --- status endpoint (browsable run state; see app.status) --------------
+    # SIMULATOR_HOST / SIMULATOR_PORT / SIMULATOR_STATUS_ENABLED
+    host: str = "0.0.0.0"
+    port: int = Field(default=8200, ge=1, le=65535)
+    status_enabled: bool = True
+
     # --- topology resolution ------------------------------------------------
     # When the backend has no devices yet, build synthetic interface ids so the
     # simulator can still be exercised offline (dry-run / unit tests).

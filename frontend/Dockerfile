@@ -33,7 +33,9 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 
 # Health check
+# NOTE: use 127.0.0.1, not "localhost" — busybox wget resolves localhost to ::1
+# (IPv6) first, while nginx only listens on IPv4 (listen 80), so the probe fails.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
+  CMD wget --quiet --tries=1 --spider http://127.0.0.1/health || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

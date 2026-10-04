@@ -15,6 +15,25 @@ router = APIRouter(tags=["observability"])
 
 
 @router.get(
+    "/",
+    summary="Service index",
+)
+async def index(request: Request) -> dict:
+    """Browsable root so opening the port shows service info, not a 404."""
+    service = getattr(request.app.state, "service", None)
+    settings = getattr(request.app.state, "settings", None)
+    return {
+        "service": "NetOps Collection Layer",
+        "version": __version__,
+        "status": "ok" if service is not None else "starting",
+        "forwarder": settings.forwarder if settings else None,
+        "links": {"docs": "/docs", "health": "/health", "metrics": "/metrics"},
+        "endpoints": {"ingest": "POST /ingest"},
+    }
+
+
+
+@router.get(
     "/health",
     response_model=HealthResponse,
     summary="Liveness / readiness check",

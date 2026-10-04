@@ -104,6 +104,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(alerts_router, prefix=prefix)
     app.include_router(copilot_router, prefix=prefix)
 
+    # ── Service index ──────────────────────────────────────────────────────────
+    # Browsable root so opening http://localhost:8000/ shows what this service
+    # exposes instead of the default 404 {"detail":"Not Found"}.
+    @app.get("/", tags=["health"])
+    async def service_index() -> dict:
+        return {
+            "service": settings.app_name,
+            "version": "0.1.0",
+            "environment": settings.app_env,
+            "status": "running",
+            "links": {
+                "docs": "/docs",
+                "redoc": "/redoc",
+                "openapi": "/openapi.json",
+                "health": "/health",
+            },
+            "api": {
+                "prefix": prefix,
+                "health": f"{prefix}/health",
+                "devices": f"{prefix}/devices",
+                "interfaces": f"{prefix}/interfaces",
+                "alerts": f"{prefix}/alerts",
+                "telemetry_ingest": f"{prefix}/telemetry/ingest",
+                "copilot_chat": f"{prefix}/copilot/chat",
+                "copilot_history": f"{prefix}/copilot/history/{{session_id}}",
+            },
+        }
+
     # Root health probe endpoint for Docker / orchestration
     app.include_router(health_router)
 

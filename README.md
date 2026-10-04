@@ -222,10 +222,23 @@ docker compose up --build
 ```
 This starts:
 - `mysql`: Database initialized with schema and seed data
-- `backend`: Core API on port 8000
-- `collector`: Collection layer on port 8100
-- `simulator`: Generating live telemetry in the background
-- `frontend`: Vite preview/dev on port 5173
+- `backend`: Core API on port 8000 (healthcheck-gated on MySQL)
+- `collector`: Collection layer on port 8100 (starts after backend is healthy)
+- `simulator`: Generating live telemetry in the background (starts after collector is healthy); live status dashboard on **http://localhost:8200**
+- `frontend`: Dashboard served by nginx on **http://localhost:3000** (proxies `/api/` to the backend)
+
+Every HTTP service exposes a browsable root, so you can see what is going on
+just by opening its port in a browser:
+
+| Port | URL | What you see |
+|---|---|---|
+| 3000 | http://localhost:3000 | NOC dashboard (React) |
+| 8000 | http://localhost:8000 | Backend service index → links to `/docs`, `/health`, API routes |
+| 8100 | http://localhost:8100 | Collector service index → links to `/docs`, `/health`, `/metrics` |
+| 8200 | http://localhost:8200 | Simulator live status dashboard (ticks / samples / accepted, auto-refresh) |
+
+> **Note:** a root `.env` is optional for Docker — `docker compose up` works without it
+> (copy `.env.example` to `.env` only if you want to override defaults or add LLM API keys).
 
 ---
 
@@ -288,3 +301,4 @@ For comprehensive, file-by-file explanations of each subsystem, consult their de
 | `SIMULATOR_COLLECTOR_URL` | Simulator | `http://localhost:8100/ingest` | Collection layer endpoint for telemetry injection |
 | `SIMULATOR_INTERVAL_SECONDS` | Simulator | `5.0` | Simulated time duration per tick |
 | `SIMULATOR_DEFAULT_SCENARIO`| Simulator | `mixed` | Active simulation scenario |
+| `SIMULATOR_PORT` | Simulator | `8200` | Browsable status endpoint (`/`, `/status`, `/health`) |
