@@ -57,9 +57,12 @@ class TopologyResolver:
             interfaces_by_name: dict[str, dict] = {}
 
             if backend_device is not None:
+                dev_id = backend_device.get("device_id") or backend_device.get("id")
                 try:
-                    found = await self.directory.list_interfaces(backend_device["device_id"])
-                    interfaces_by_name = {i.get("interface_name"): i for i in found}
+                    found = await self.directory.list_interfaces(dev_id)
+                    interfaces_by_name = {
+                        (i.get("interface_name") or i.get("name")): i for i in found
+                    }
                 except Exception as exc:  # pragma: no cover - network dependent
                     logger.warning(
                         "topology.interface_list_failed",
@@ -71,7 +74,8 @@ class TopologyResolver:
             for spec in device.interfaces:
                 backend_interface = interfaces_by_name.get(spec.name)
                 if backend_interface is not None:
-                    interface_id = int(backend_interface["interface_id"])
+                    raw_id = backend_interface.get("interface_id") or backend_interface.get("id")
+                    interface_id = int(raw_id)
                 elif self.allow_synthetic or backend_device is None:
                     interface_id = synthetic_id
                     synthetic_id += 1
@@ -87,12 +91,16 @@ class TopologyResolver:
                     )
                     continue
 
+                dev_id_resolved = None
+                if backend_device:
+                    dev_id_resolved = backend_device.get("device_id") or backend_device.get("id")
+
                 state.append(
                     InterfaceState(
                         interface_id=interface_id,
                         name=spec.name,
                         device_hostname=device.hostname,
-                        device_id=backend_device["device_id"] if backend_device else None,
+                        device_id=dev_id_resolved,
                         interface_type=spec.interface_type,
                         capacity_bps=spec.capacity_bps,
                         baseline_utilization=spec.baseline_utilization,

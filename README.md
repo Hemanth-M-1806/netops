@@ -34,13 +34,13 @@ NetOps is designed as a decoupled, multi-tier microservice architecture where te
                                          ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │ backend/ — Core Application & Domain API (Port 8000)                                   │
-│   • FastAPI + SQLAlchemy 2.x (Async) + Alembic                                         │
-│   • Device and Interface inventory management                                          │
-│   • Anomaly detection and alert lifecycle management                                   │
-│   • AI Copilot service: context retrieval & telemetry-grounded conversational LLM     │
+│   • FastAPI + Pure RDBMS (raw aiomysql connection pool — no ORM overhead)              │
+│   • Dynamic multi-factor ML risk scoring formula + statistical Z-score amplifier       │
+│   • Automated anomaly detection & alert lifecycle management                           │
+│   • Grounded RAG Copilot service: live telemetry context retrieval & LLM abstraction   │
 └───────────────────┬────────────────────────────────────────────────┬───────────────────┘
                     │                                                ▲
-         SQLAlchemy │ (Async Reads & Writes)                         │ REST / SSE
+           aiomysql │ (Async Parameterised SQL Reads & Writes)       │ REST / SSE
                     ▼                                                │
 ┌──────────────────────────────────────┐        ┌────────────────────┴───────────────────┐
 │ database/ — Persistence (Port 3306)  │        │ frontend/ — NOC Dashboard (Port 5173)  │
@@ -163,15 +163,11 @@ Get-Content database/seeds/seed_topology.sql | docker exec -i netops-mysql mysql
 Open a new terminal:
 ```powershell
 cd backend
-python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-dev.txt
-
-# Run migrations
-alembic upgrade head
+python -m pip install -r requirements.txt
 
 # Start API server
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000
 ```
 *Backend is now live at `http://localhost:8000` with Swagger docs at `http://localhost:8000/docs`.*
 

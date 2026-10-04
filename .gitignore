@@ -29,5 +29,7 @@ dist-ssr/
 .DS_Store
 Thumbs.db
 
-# ---- Data volumes ----
+# ---- Data volumes / Docker ----
 pgdata/
+mysql_data/
+*.log
