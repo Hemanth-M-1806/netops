@@ -190,6 +190,15 @@ ALERT_RECENT_UNRESOLVED = """
     LIMIT  1
 """
 
+# Auto-resolve every open alert of a type (used when an interface recovers)
+ALERT_RESOLVE_BY_TYPE = """
+    UPDATE alerts
+    SET    resolved = 1, resolved_at = NOW(6)
+    WHERE  interface_id = %s
+      AND  alert_type = %s
+      AND  resolved = 0
+"""
+
 # ── CHAT_MESSAGES ─────────────────────────────────────────────────────────────
 
 CHAT_INSERT = """

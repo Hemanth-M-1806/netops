@@ -65,3 +65,25 @@ class BackendClient:
     async def list_interfaces(self, device_id: int) -> list[dict]:
         return await self._get_list(f"/devices/{device_id}/interfaces")
 
+    # ---- Status reporting (outages surface as DOWN on the dashboard) ------
+    async def update_device_statuses(self, updates: list[dict]) -> None:
+        """``updates``: [{"hostname": "R1", "status": "DOWN"}, ...]"""
+        await self._post("/devices/status-updates", {"updates": updates})
+
+    async def update_interface_statuses(self, updates: list[dict]) -> None:
+        """``updates``: [{"interface_id": 11, "status": "DOWN"}, ...]"""
+        await self._post("/interfaces/status-updates", {"updates": updates})
+
+    async def _post(self, url: str, body: dict) -> Any:
+        async def _do() -> Any:
+            response = await self._client.post(url, json=body)
+            response.raise_for_status()
+            return response.json()
+
+        payload = await call_with_retry(
+            _do,
+            attempts=self._settings.max_retries,
+            backoff_seconds=self._settings.retry_backoff_seconds,
+        )
+        return unwrap(payload)
+

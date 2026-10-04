@@ -5,11 +5,20 @@ import aiomysql
 from fastapi import APIRouter, Depends, Query
 
 from app.core.errors import NotFoundError
-from app.db import acquire, fetch_many, fetch_one
+from app.core.logging import get_logger
+from app.db import acquire, execute, fetch_many, fetch_one
 from app.db import queries as Q
-from app.models import DeviceListOut, DeviceOut, InterfaceListOut, InterfaceOut
+from app.models import (
+    DeviceListOut,
+    DeviceOut,
+    DeviceStatusUpdateIn,
+    InterfaceListOut,
+    InterfaceOut,
+    StatusUpdateOut,
+)
 from app.routers.deps import get_db_pool
 
+logger = get_logger(__name__)
 router = APIRouter(prefix="/devices", tags=["devices"])
 
 
@@ -37,6 +46,37 @@ async def list_devices(
         )
 
     return DeviceListOut(total=total, items=[DeviceOut(**r) for r in rows])
+
+
+@router.post("/status-updates", response_model=StatusUpdateOut)
+async def update_device_statuses(
+    payload: DeviceStatusUpdateIn,
+    pool: aiomysql.Pool = Depends(get_db_pool),
+) -> StatusUpdateOut:
+    """
+    Bulk device status report (hostname -> status).
+
+    Used by the collection layer / simulator to surface outages: e.g. the
+    `device_failure` scenario reports DOWN here so the dashboard stops
+    showing a device as healthy.
+    """
+    updated = 0
+    if not payload.updates:
+        return StatusUpdateOut(updated=0)
+
+    async with acquire(pool) as conn:
+        for u in payload.updates:
+            row = await fetch_one(conn, Q.DEVICE_BY_HOSTNAME, (u.hostname,))
+            if not row or row["status"] == u.status:
+                continue
+            await execute(conn, Q.DEVICE_UPDATE_STATUS, (u.status, row["id"]))
+            updated += 1
+            logger.info(
+                "device.status_changed",
+                extra={"hostname": u.hostname, "status": u.status},
+            )
+
+    return StatusUpdateOut(updated=updated)
 
 
 @router.get("/{device_id}", response_model=DeviceOut)

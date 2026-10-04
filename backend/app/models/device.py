@@ -37,3 +37,19 @@ class DeviceListOut(BaseModel):
     """Paginated device list envelope."""
     total: int
     items: list[DeviceOut]
+
+
+class DeviceStatusUpdate(BaseModel):
+    """Single device status report (hostname-keyed, as known by producers)."""
+    hostname: str
+    status: DeviceStatus
+
+
+class DeviceStatusUpdateIn(BaseModel):
+    """Bulk device status report from the collector/simulator."""
+    updates: list[DeviceStatusUpdate] = Field(default_factory=list, max_length=500)
+
+
+class StatusUpdateOut(BaseModel):
+    """Generic envelope for bulk status updates."""
+    updated: int

@@ -14,14 +14,33 @@ import { TopologyCanvas3D } from '@/components/topology/TopologyCanvas3D'
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate()
   const { data: devicesData } = useDevices()
-  const { data: alertsData, isLoading: alertsLoading } = useAlerts({ resolved: false, limit: 10 })
+  const { data: alertsData, isLoading: alertsLoading } = useAlerts({ resolved: false, limit: 100 })
   // Sample telemetry from interface 10 (R1/Gi0/0) or 20 (R2/Gi0/0)
   const { data: metricsData } = useInterfaceMetrics(10, { limit: 25 })
 
   const totalDevices = devicesData?.total || 0
   const activeAlerts = alertsData?.total || 0
-  const criticalCount =
-    alertsData?.items.filter((a) => a.severity === 'CRITICAL' || a.severity === 'HIGH').length || 0
+  const alertItems = alertsData?.items || []
+  const criticalCount = alertItems.filter((a) => a.severity === 'CRITICAL').length
+  const highCount = alertItems.filter((a) => a.severity === 'HIGH').length
+  const highCriticalCount = criticalCount + highCount
+  const offlineDevices =
+    devicesData?.items.filter((d) => d.status === 'DOWN' || d.status === 'CRITICAL').length || 0
+
+  // Live system status — derived from actual faults, never hardcoded.
+  const hasFailure = criticalCount > 0 || offlineDevices > 0
+  const hasDegradation = highCount > 0
+  const systemStatus = hasFailure ? 'Critical' : hasDegradation ? 'Degraded' : 'Healthy'
+  const statusBadge = hasFailure
+    ? `${criticalCount + offlineDevices} CRITICAL FAULTS`
+    : hasDegradation
+    ? 'DEGRADED — REVIEW ALERTS'
+    : 'ALL SYSTEMS ONLINE'
+  const statusBadgeClass = hasFailure
+    ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+    : hasDegradation
+    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+    : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
@@ -30,8 +49,8 @@ export const DashboardPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold font-mono tracking-tight text-white flex items-center gap-3">
             Operations Command Center
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-              ALL SYSTEMS ONLINE
+            <span className={`text-xs px-2.5 py-0.5 rounded-full border ${statusBadgeClass}`}>
+              {statusBadge}
             </span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
@@ -66,29 +85,37 @@ export const DashboardPage: React.FC = () => {
         <MetricCard
           title="Monitored Devices"
           value={totalDevices}
-          subtitle="6 Core & Perimeter"
-          trend="+0 offline"
-          trendPositive={true}
+          subtitle="Core & Perimeter"
+          trend={`${offlineDevices} offline`}
+          trendPositive={offlineDevices === 0}
           icon={Server}
-          iconColor="text-blue-400"
+          iconColor={offlineDevices > 0 ? 'text-rose-400' : 'text-blue-400'}
         />
         <MetricCard
           title="Active Alerts"
           value={activeAlerts}
-          subtitle={`${criticalCount} High / Critical`}
-          trend={criticalCount > 0 ? 'Requires Review' : 'Nominal'}
-          trendPositive={criticalCount === 0}
+          subtitle={`${highCriticalCount} High / Critical`}
+          trend={highCriticalCount > 0 ? 'Requires Review' : 'Nominal'}
+          trendPositive={highCriticalCount === 0}
           icon={ShieldAlert}
-          iconColor={criticalCount > 0 ? 'text-rose-400' : 'text-emerald-400'}
+          iconColor={highCriticalCount > 0 ? 'text-rose-400' : 'text-emerald-400'}
         />
         <MetricCard
           title="Network Status"
-          value="Healthy"
-          subtitle="Z-Score Anomaly Detector: ON"
-          trend="99.98% SLA"
-          trendPositive={true}
+          value={systemStatus}
+          subtitle={`${activeAlerts} active alerts · Detector ON`}
+          trend={
+            hasFailure
+              ? `${criticalCount} critical / ${offlineDevices} down`
+              : hasDegradation
+              ? `${highCount} high-severity`
+              : '99.98% SLA'
+          }
+          trendPositive={!hasFailure && !hasDegradation}
           icon={Activity}
-          iconColor="text-emerald-400"
+          iconColor={
+            hasFailure ? 'text-rose-400' : hasDegradation ? 'text-amber-400' : 'text-emerald-400'
+          }
         />
         <MetricCard
           title="Telemetry Ingest"

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 InterfaceType = Literal["ethernet", "loopback", "vlan", "tunnel", "other"]
@@ -36,3 +36,14 @@ class InterfaceOut(BaseModel):
 
 class InterfaceListOut(BaseModel):
     items: list[InterfaceOut]
+
+
+class InterfaceStatusUpdate(BaseModel):
+    """Single interface status report."""
+    interface_id: int
+    status: InterfaceStatus
+
+
+class InterfaceStatusUpdateIn(BaseModel):
+    """Bulk interface status report from the collector/simulator."""
+    updates: list[InterfaceStatusUpdate] = Field(default_factory=list, max_length=500)

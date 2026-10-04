@@ -29,6 +29,7 @@ class Simulator:
         reset_generators=None,
         clock: Clock | None = None,
         rng: random.Random | None = None,
+        status_sink=None,  # Callable[[dict, dict], Awaitable] | None
     ) -> None:
         self._settings = settings
         self._interfaces = interfaces
@@ -37,6 +38,11 @@ class Simulator:
         self._reset_generators = reset_generators or (lambda: None)
         self._clock = clock or SystemClock()
         self._rng = rng or random.Random(settings.random_seed)
+        # Optional reporter for *changed* device/interface statuses so the
+        # backend dashboard can show outages (None in dry-run / tests).
+        self._status_sink = status_sink
+        self._reported_device_status: dict[str, str] = {}
+        self._reported_interface_status: dict[int, str] = {}
 
         self.tick_index = 0
         self.totals: dict[str, int] = {
@@ -60,7 +66,8 @@ class Simulator:
         )
 
         payloads: list[MetricPayload] = []
-        device_status: dict[str, str] = {}
+        explicit_device_status: dict[str, str] = {}
+        interface_status: dict[int, str] = {}
 
         for state in self._interfaces:
             generator = self._generator_for(state)
@@ -80,6 +87,7 @@ class Simulator:
             state.tick += 1
             if result.interface_status is not None:
                 state.status = result.interface_status
+                interface_status[state.interface_id] = state.status
             state.rx_bytes = result.sample.rx_bytes
             state.tx_bytes = result.sample.tx_bytes
             state.packet_drops = result.sample.packet_drops
@@ -97,9 +105,47 @@ class Simulator:
             )
 
             if result.device_status is not None:
-                device_status[state.device_hostname] = result.device_status
+                explicit_device_status[state.device_hostname] = result.device_status
+
+        # Device liveness: DOWN when every interface is DOWN, or when the
+        # generator explicitly reported DOWN this tick. Deriving it from the
+        # interfaces makes recovery work after a dashboard hot-swap (e.g.
+        # switching from device_failure back to normal flips devices UP).
+        per_device: dict[str, list[str]] = {}
+        for iface in self._interfaces:
+            per_device.setdefault(iface.device_hostname, []).append(iface.status)
+        device_status = {
+            host: (
+                "DOWN"
+                if statuses
+                and (
+                    all(s == "DOWN" for s in statuses)
+                    or explicit_device_status.get(host) == "DOWN"
+                )
+                else "UP"
+            )
+            for host, statuses in per_device.items()
+        }
 
         delivered = await self._sink.send(payloads)
+
+        # Report only *changes* so the backend status endpoints stay cheap and
+        # the dashboard flips to DOWN exactly when a fault starts.
+        if self._status_sink is not None:
+            changed_devices = {
+                host: st
+                for host, st in device_status.items()
+                if self._reported_device_status.get(host) != st
+            }
+            changed_interfaces = {
+                iid: st
+                for iid, st in interface_status.items()
+                if self._reported_interface_status.get(iid) != st
+            }
+            if changed_devices or changed_interfaces:
+                self._reported_device_status.update(changed_devices)
+                self._reported_interface_status.update(changed_interfaces)
+                await self._status_sink(changed_devices, changed_interfaces)
 
         self.tick_index += 1
         self.totals["ticks"] += 1
@@ -111,11 +157,26 @@ class Simulator:
             "samples": len(payloads),
             "accepted": int(delivered.get("accepted", len(payloads))),
             "device_status": device_status,
+            "interface_status": interface_status,
         }
 
     # ------------------------------------------------------------------ #
     # The loop
     # ------------------------------------------------------------------ #
+    def reset_conditions(self) -> None:
+        """Fresh healthy baseline — called on a dashboard scenario hot-swap.
+
+        Clears interface/device conditions so a faulted state can't leak from
+        the previous scenario (e.g. DOWN interfaces after ``device_failure``),
+        and forces a full status re-report on the next tick so the backend
+        (and NOC dashboard) recover to UP.
+        """
+        for iface in self._interfaces:
+            iface.status = "UP"
+            iface.health = 1.0
+        self._reported_device_status.clear()
+        self._reported_interface_status.clear()
+
     async def run(
         self,
         *,

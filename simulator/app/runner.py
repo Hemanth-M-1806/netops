@@ -64,6 +64,11 @@ async def run(config: RunConfig, settings: Settings | None = None) -> dict:
     dry_run = config.dry_run or settings.dry_run
     scenario = _resolve_scenario(config, settings)
 
+    # Mutable holder so the status dashboard can hot-swap scenarios mid-run
+    # (fault injection buttons on http://localhost:8200).
+    active_scenario: dict = {"scenario": scenario}
+    status_server.set_scenario_holder(active_scenario)
+
     # Start the browsable status endpoint early so it also covers discovery.
     status_server.start(settings, scenario.name)
 
@@ -104,12 +109,35 @@ async def run(config: RunConfig, settings: Settings | None = None) -> dict:
         extra={"scenario": scenario.name, "stage": "runner"},
     )
 
+    async def _report_statuses(
+        device_status: dict[str, str], interface_status: dict[int, str]
+    ) -> None:
+        """Push changed statuses to the backend so outages show on the dashboard."""
+        if backend_client is None:
+            return  # dry-run has no directory to report to
+        try:
+            if device_status:
+                await backend_client.update_device_statuses(
+                    [{"hostname": h, "status": s} for h, s in device_status.items()]
+                )
+            if interface_status:
+                await backend_client.update_interface_statuses(
+                    [{"interface_id": i, "status": s} for i, s in interface_status.items()]
+                )
+        except Exception as exc:
+            # Status reporting must never kill the simulation loop.
+            logger.warning(
+                "status.report_failed",
+                extra={"stage": "runner", "error": str(exc)},
+            )
+
     simulator = Simulator(
         settings=settings,
         interfaces=interfaces,
         sink=sink,
-        generator_for=scenario.generator_for,
-        reset_generators=scenario.reset,
+        generator_for=lambda state: active_scenario["scenario"].generator_for(state),
+        reset_generators=lambda: active_scenario["scenario"].reset(),
+        status_sink=_report_statuses,
     )
     status_server.set_simulator(simulator)
 
