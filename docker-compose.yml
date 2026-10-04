@@ -20,5 +20,67 @@ services:
       timeout: 5s
       retries: 10
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: netops-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-netops}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-netops}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-netops}
+      FRONTEND_ORIGIN: http://localhost:3000
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  collector:
+    build:
+      context: ./collector
+      dockerfile: Dockerfile
+    container_name: netops-collector
+    restart: unless-stopped
+    environment:
+      COLLECTOR_FORWARDER: backend
+      COLLECTOR_BACKEND_URL: http://backend:8000/api/v1/telemetry/ingest
+    ports:
+      - "8100:8100"
+    depends_on:
+      - backend
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: netops-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    container_name: netops-simulator
+    restart: unless-stopped
+    environment:
+      SIMULATOR_API_BASE_URL: http://backend:8000/api/v1
+      SIMULATOR_COLLECTOR_URL: http://collector:8100/ingest
+      SIMULATOR_INTERVAL_SECONDS: 5
+      SIMULATOR_DEFAULT_SCENARIO: mixed
+    depends_on:
+      - collector
+      - backend
+
 volumes:
   mysql_data:

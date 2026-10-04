@@ -45,3 +45,17 @@ async def test_mock_llm_client():
     reply, tokens = await client.complete(messages)
     assert "[Mock Copilot]" in reply
     assert tokens > 0
+
+
+def test_openrouter_client_factory():
+    settings = Settings(
+        llm_provider="openrouter",
+        llm_model="qwen/qwen3.8-27b:free",
+        openrouter_api_key="test-key",
+    )
+    client = get_llm_client(settings)
+    from app.rag.llm import OpenRouterClient
+    assert isinstance(client, OpenRouterClient)
+    assert client._model == "qwen/qwen3.8-27b:free"
+    assert client._api_key == "test-key"
+

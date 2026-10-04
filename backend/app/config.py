@@ -65,13 +65,15 @@ class Settings(BaseSettings):
     anomaly_error_sigma: float = Field(default=3.0, gt=0)
 
     # ── LLM / RAG ────────────────────────────────────────────────────────────
-    llm_provider: Literal["mock", "openai", "ollama", "local"] = "mock"
-    llm_model: str = "mock-1"
+    llm_provider: Literal["mock", "openai", "ollama", "local", "openrouter"] = "openrouter"
+    llm_model: str = "qwen/qwen3.8-27b:free"
     llm_temperature: float = Field(default=0.2, ge=0, le=2)
     llm_max_tokens: int = Field(default=800, ge=1)
     prompt_version: str = "v1"
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     ollama_base_url: str = "http://localhost:11434"
     # RAG context window limits
     cache_max_context_metrics: int = Field(default=50, ge=1)
