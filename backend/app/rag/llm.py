@@ -130,7 +130,7 @@ class OpenRouterClient(BaseLLMClient):
     def __init__(self, settings: Settings) -> None:
         self._base_url = (settings.openrouter_base_url or "https://openrouter.ai/api/v1").rstrip("/")
         self._api_key  = settings.openrouter_api_key or settings.openai_api_key
-        self._model    = settings.llm_model or "qwen/qwen3.8-27b:free"
+        self._model    = settings.llm_model or "nvidia/nemotron-3-ultra-550b-a55b:free"
         self._temp     = settings.llm_temperature
         self._max_tok  = settings.llm_max_tokens
 
@@ -170,8 +170,39 @@ class OpenRouterClient(BaseLLMClient):
 
                     resp.raise_for_status()
                     data = resp.json()
+
+                    # OpenRouter returns HTTP 200 with an `error` object in the body
+                    # when the upstream provider is overloaded (e.g. Nvidia 503).
+                    # Without this check the chat would persist an empty assistant reply.
+                    upstream_error = data.get("error")
+                    if upstream_error:
+                        last_error = str(
+                            upstream_error.get("message", upstream_error)
+                            if isinstance(upstream_error, dict)
+                            else upstream_error
+                        )
+                        if attempt < max_retries - 1:
+                            logger.warning(
+                                f"OpenRouter upstream error (attempt {attempt + 1}/{max_retries}): "
+                                f"{last_error[:120]}. Retrying in {2 * (attempt + 1)}s..."
+                            )
+                            await asyncio.sleep(2 * (attempt + 1))
+                            continue
+                        raise LLMError(
+                            f"OpenRouter upstream error (model: {self._model}): {last_error[:200]}"
+                        )
+
                     choice_msg = data.get("choices", [{}])[0].get("message", {})
-                    reply = choice_msg.get("content") or choice_msg.get("reasoning_details") or choice_msg.get("reasoning") or ""
+                    reply = choice_msg.get("content") or ""
+                    if not reply:
+                        # Some reasoning models return only the reasoning trace.
+                        reasoning = choice_msg.get("reasoning")
+                        if isinstance(reasoning, str):
+                            reply = reasoning
+                    if not reply:
+                        raise LLMError(
+                            f"OpenRouter returned an empty reply (model: {self._model})"
+                        )
                     tokens = data.get("usage", {}).get("total_tokens", len(reply.split()))
                     return reply, tokens
                 except httpx.HTTPStatusError as exc:
@@ -183,8 +214,11 @@ class OpenRouterClient(BaseLLMClient):
                 except httpx.RequestError as exc:
                     raise LLMError(f"OpenRouter request failed: {exc}") from exc
 
-        # If all retries exhausted on 429
-        raise LLMError(f"OpenRouter upstream rate limit exceeded (model: {self._model}): {last_error[:200]}")
+        # If all retries exhausted on 429 / upstream overload
+        raise LLMError(
+            f"OpenRouter request failed after {max_retries} attempts "
+            f"(model: {self._model}): {last_error[:200]}"
+        )
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────

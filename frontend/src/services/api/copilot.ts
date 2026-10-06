@@ -3,7 +3,10 @@ import type { CopilotRequest, CopilotResponse, ChatMessage } from '@/types'
 
 export const copilotApi = {
   chat: async (request: CopilotRequest): Promise<CopilotResponse> => {
-    const { data } = await apiClient.post<CopilotResponse>('/copilot/chat', request)
+    // Backend LLM retries (429/503 backoff) can exceed the default 15s timeout.
+    const { data } = await apiClient.post<CopilotResponse>('/copilot/chat', request, {
+      timeout: 60000,
+    })
     return data
   },
 

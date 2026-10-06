@@ -65,12 +65,18 @@ export const CopilotChat: React.FC = () => {
 
       addMessage(response.assistant_message)
     } catch (err: any) {
+      // The API client normalises backend errors to Error(detail), so surface it.
+      const detail =
+        typeof err?.message === 'string' && err.message && err.message !== 'Network Error'
+          ? err.message
+          : null
       addMessage({
         id: Date.now(),
         session_id: sessionId,
         role: 'assistant',
-        content:
-          '⚠️ Error connecting to NetOps Copilot service. Please verify that the backend LLM provider is configured.',
+        content: detail
+          ? `⚠️ Copilot error: ${detail}`
+          : '⚠️ Error connecting to NetOps Copilot service. Please verify that the backend LLM provider is configured.',
         token_count: null,
         created_at: new Date().toISOString(),
       })

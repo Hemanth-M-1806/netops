@@ -59,3 +59,85 @@ def test_openrouter_client_factory():
     assert client._model == "qwen/qwen3.8-27b:free"
     assert client._api_key == "test-key"
 
+
+@pytest.mark.asyncio
+async def test_openrouter_body_error_is_retried(monkeypatch):
+    """OpenRouter answers HTTP 200 with an `error` body when the upstream provider
+    is overloaded. It must be retried — never returned as an empty assistant reply."""
+    import asyncio
+    import httpx as httpx_mod
+
+    from app.rag.llm import OpenRouterClient
+
+    calls = {"count": 0}
+
+    async def fake_post(self, url, json=None, headers=None, **kwargs):
+        calls["count"] += 1
+        request = httpx_mod.Request("POST", url)
+        if calls["count"] < 3:
+            return httpx_mod.Response(
+                200,
+                json={
+                    "error": {
+                        "message": "Upstream error from Nvidia: Service temporarily overloaded",
+                        "code": 503,
+                    }
+                },
+                request=request,
+            )
+        return httpx_mod.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "Ping"}}],
+                "usage": {"total_tokens": 12},
+            },
+            request=request,
+        )
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(httpx_mod.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+
+    client = OpenRouterClient(
+        Settings(
+            llm_provider="openrouter",
+            llm_model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            openrouter_api_key="test-key",
+        )
+    )
+    reply, tokens = await client.complete([{"role": "user", "content": "hi"}])
+    assert reply == "Ping"
+    assert tokens == 12
+    assert calls["count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_openrouter_body_error_exhausted_raises(monkeypatch):
+    """Persistent upstream overload surfaces as LLMError, not an empty reply."""
+    import asyncio
+    import httpx as httpx_mod
+
+    from app.core.errors import LLMError
+    from app.rag.llm import OpenRouterClient
+
+    async def fake_post(self, url, json=None, headers=None, **kwargs):
+        return httpx_mod.Response(
+            200,
+            json={"error": {"message": "Upstream error: overloaded", "code": 503}},
+            request=httpx_mod.Request("POST", url),
+        )
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(httpx_mod.AsyncClient, "post", fake_post)
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+
+    client = OpenRouterClient(
+        Settings(llm_provider="openrouter", openrouter_api_key="test-key")
+    )
+    with pytest.raises(LLMError, match="upstream"):
+        await client.complete([{"role": "user", "content": "hi"}])
+
